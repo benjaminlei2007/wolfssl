@@ -478,7 +478,7 @@ static NOOPT int Octeon_AesGcm_SetKey(Aes* aes)
         CVMX_MT_AES_KEYLENGTH((aes->keylen / 8) - 1);
 
         if (!aes->keySet) {
-            uint64_t* bigH = (uint64_t*)aes->H;
+            uint64_t* bigH = (uint64_t*)aes.gcm->H;
             CVMX_MT_AES_ENC0(0);
             CVMX_MT_AES_ENC1(0);
             CVMX_MF_AES_RESULT(bigH[0], 0);
@@ -525,7 +525,7 @@ static NOOPT int Octeon_AesGcm_SetIV(Aes* aes, byte* iv, word32 ivSz)
         aes->y0 = aes->reg[3];
         aes->reg[3]++;
 
-        Octeon_GHASH_Init(0xe100, aes->H);
+        Octeon_GHASH_Init(0xe100, aes.gcm->H);
     }
 
     return ret;
@@ -547,7 +547,7 @@ static NOOPT int Octeon_AesGcm_SetAAD(Aes* aes, byte* aad, word32 aadSz)
     blocks = aadSz / AES_BLOCK_SIZE;
     remainder = aadSz % AES_BLOCK_SIZE;
 
-    Octeon_GHASH_Restore(0xe100, aes->H);
+    Octeon_GHASH_Restore(0xe100, aes.gcm->H);
 
     p = (word64*)aesBlock;
 

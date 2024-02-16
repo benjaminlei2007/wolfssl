@@ -104,6 +104,174 @@ int wc_Md5Final(wc_Md5* md5, byte* hash)
     return ret;
 }
 
+#elif defined(HAVE_OCTEON_50XX)
+
+#define HAVE_MD5_CUST_API
+
+#include "cvmx.h"
+#include "cvmx-asm.h"
+#include "cvmx-key.h"
+#include "cvmx-swap.h"
+
+int wc_InitMd5_ex(wc_Md5* md5, void* heap, int devId)
+{
+    if (md5 == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    (void)devId;
+    (void)heap;
+    md5->buffLen = 0;
+    md5->E = 0x0123456789abcdefull;
+    md5->F = 0xfedcba9876543210ull;
+    return 0;
+}
+
+int wc_Md5Update(wc_Md5 *md5, const byte *data, word32 len)
+//(MD5_CTX * c, const void *data_, unsigned long len)
+{
+    int ret;
+    unsigned long remaining = 0, totlen = 0, copied = 0;
+    const uint64_t *ptr = (const uint64_t *)data;
+    if (md5 == NULL || (data == NULL && len > 0))
+    {
+        return BAD_FUNC_ARG;
+    }
+    ret = wolfSSL_CryptHwMutexLock();
+    if (ret == 0)
+    {
+        totlen = len;
+        if (md5->buffLen)
+        {
+            /* Adjust the previous data */
+            /* This is not the first update call */
+            totlen += remaining = md5->buffLen % 64;
+            if (remaining)
+            {
+                memcpy((void *)&(md5->buffer) + remaining, data, 64 - remaining);
+                copied = 1;
+            }
+        }
+
+        if (totlen >= 64)
+        {
+            /* Initialise the running IV */
+            CVMX_MT_HSH_IV (md5->E, 0);
+            CVMX_MT_HSH_IV (md5->F, 1);
+
+            while (totlen >= 64)
+            {
+                if (copied)
+                {
+                    copied = 0;
+                }
+                if (remaining)
+                {
+                    ptr = (uint64_t *)&md5->buffer;
+                }
+                CVMX_MT_HSH_DAT(*ptr++, 0);
+                CVMX_MT_HSH_DAT(*ptr++, 1);
+                CVMX_MT_HSH_DAT(*ptr++, 2);
+                CVMX_MT_HSH_DAT(*ptr++, 3);
+                CVMX_MT_HSH_DAT(*ptr++, 4);
+                CVMX_MT_HSH_DAT(*ptr++, 5);
+                CVMX_MT_HSH_DAT(*ptr++, 6);
+                CVMX_MT_HSH_STARTMD5(*ptr++);
+                totlen -= 64;
+                if (remaining)
+                {
+                    ptr = data + (64 - remaining);
+                    remaining = 0;
+                }
+            }
+            CVMX_MF_HSH_IV (md5->E, 0);
+            CVMX_MF_HSH_IV (md5->F, 1);
+
+        } /* if (len > 64) */
+
+        md5->buffLen += (len);
+        /* Copy the remaining stuffs in to a buffer and do the hash in the next
+         * update or final.
+         */
+        if (!copied)
+            memcpy(&(md5->buffer), ptr, totlen);
+        wolfSSL_CryptHwMutexUnLock();
+    }
+    return ret;
+}
+
+int wc_Md5Final(wc_Md5 *md5, byte *hash)
+{
+    unsigned long len;
+    uint8_t chunk[64];
+    uint64_t bits;
+    const uint64_t *ptr;
+    int ret;
+
+    if (md5 == NULL || hash == NULL)
+    {
+        return BAD_FUNC_ARG;
+    }
+
+    ret = wolfSSL_CryptHwMutexLock();
+    if (ret == 0)
+    {
+        len = md5->buffLen % 64;
+        bits = cvmx_cpu_to_le64(md5->buffLen * 8);
+        /* The rest of the data will need to be copied into a chunk */
+        if (len > 0)
+            memcpy(chunk, md5->buffer, len);
+        chunk[len] = 0x80;
+        memset(chunk + len + 1, 0, 64 - len - 1);
+        /* Initialise the running IV */
+        CVMX_MT_HSH_IV(md5->E, 0);
+        CVMX_MT_HSH_IV(md5->F, 1);
+
+        ptr = (const uint64_t *)chunk;
+        CVMX_MT_HSH_DAT(*ptr++, 0);
+        CVMX_MT_HSH_DAT(*ptr++, 1);
+        CVMX_MT_HSH_DAT(*ptr++, 2);
+        CVMX_MT_HSH_DAT(*ptr++, 3);
+        CVMX_MT_HSH_DAT(*ptr++, 4);
+        CVMX_MT_HSH_DAT(*ptr++, 5);
+        CVMX_MT_HSH_DAT(*ptr++, 6);
+
+        /* Check to see if there is room for the bit count */
+        if (len < 56)
+            CVMX_MT_HSH_STARTMD5(bits);
+        else
+        {
+            CVMX_MT_HSH_STARTMD5(*ptr);
+            /* Another block was needed */
+            CVMX_MT_HSH_DATZ(0);
+            CVMX_MT_HSH_DATZ(1);
+            CVMX_MT_HSH_DATZ(2);
+            CVMX_MT_HSH_DATZ(3);
+            CVMX_MT_HSH_DATZ(4);
+            CVMX_MT_HSH_DATZ(5);
+            CVMX_MT_HSH_DATZ(6);
+
+            /*
+             * Workaround for issue described in section "2.2.3.2 MD5 Hash Calculation
+             * Restart" of the CN63XX Pass 1 Known Issues document.
+             */
+            CVMX_MF_HSH_IV(md5->E, 0);
+            CVMX_MF_HSH_IV(md5->F, 1);
+
+            CVMX_MT_HSH_STARTMD5(bits);
+        }
+        CVMX_MF_HSH_IV(md5->E, 0);
+        CVMX_MF_HSH_IV(md5->F, 1);
+
+        memcpy(hash, (void *)&md5->E, 8);
+        memcpy(hash + 8, (void *)&md5->F, 8);
+        md5->buffLen = 0;
+        wolfSSL_CryptHwMutexUnLock();
+    }
+    (void)wc_InitMd5(md5);
+    return ret;
+}
+
 #elif defined(FREESCALE_MMCAU_SHA)
 
 #ifdef FREESCALE_MMCAU_CLASSIC_SHA

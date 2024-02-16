@@ -71,6 +71,15 @@
 #ifdef STM32_HASH
     #include <wolfssl/wolfcrypt/port/st/stm32.h>
 #endif
+
+#ifdef HAVE_OCTEON_50XX
+typedef struct {
+	unsigned long total[2];
+	unsigned long  state[8];
+	unsigned char buffer[64];
+} sha256_context;
+#endif
+
 #ifdef WOLFSSL_ASYNC_CRYPT
     #include <wolfssl/wolfcrypt/async.h>
 #endif
@@ -175,6 +184,9 @@ struct wc_Sha256 {
 #elif defined(WOLFSSL_HAVE_PSA) && !defined(WOLFSSL_PSA_NO_HASH)
     psa_hash_operation_t psa_ctx;
 #else
+    #if defined(HAVE_OCTEON_50XX)
+    sha256_context octCtx;
+    #endif
     /* alignment on digest and buffer speeds up ARMv8 crypto operations */
     ALIGN16 word32  digest[WC_SHA256_DIGEST_SIZE / sizeof(word32)];
     ALIGN16 word32  buffer[WC_SHA256_BLOCK_SIZE  / sizeof(word32)];

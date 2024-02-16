@@ -161,7 +161,7 @@ endif
 EXTRA_DIST += wolfcrypt/src/port/cavium/README.md
 
 if BUILD_OCTEON_SYNC
-src_libwolfssl@LIBSUFFIX@_la_SOURCES += wolfcrypt/src/port/cavium/cavium_octeon_sync.c
+src_libwolfssl@LIBSUFFIX@_la_SOURCES += wolfcrypt/src/port/cavium/cavium_octeon_50xx.c
 endif
 EXTRA_DIST += wolfcrypt/src/port/cavium/README_Octeon.md
 

@@ -874,7 +874,7 @@ function(generate_lib_src_list LIB_SOURCES)
     endif()
 
     if(BUILD_OCTEON_SYNC)
-        list(APPEND LIB_SOURCES wolfcrypt/src/port/cavium/cavium_octeon_sync.c)
+        list(APPEND LIB_SOURCES wolfcrypt/src/port/cavium/cavium_octeon_50xx.c)
     endif()
 
     if(BUILD_INTEL_QA)

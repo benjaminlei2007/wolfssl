@@ -42,8 +42,10 @@
 
 typedef struct WOLFSSL_MD5_CTX {
     /* big enough to hold wolfcrypt md5, but check on init */
-#ifdef STM32_HASH
+#if defined(STM32_HASH)
     void* holder[(112 + WC_ASYNC_DEV_SIZE + sizeof(STM32_HASH_Context)) / sizeof(void*)];
+#elif defined(HAVE_OCTEON_50XX)
+    void* holder[(128 + WC_ASYNC_DEV_SIZE) / sizeof(void*)];
 #else
     void* holder[(112 + WC_ASYNC_DEV_SIZE) / sizeof(void*)];
 #endif

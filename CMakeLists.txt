@@ -2462,7 +2462,7 @@ else()
 
   if(NOT BUILD_OCTEON_SYNC)
     list(APPEND HEADER_EXCLUDE
-      "wolfssl/wolfcrypt/port/cavium/cavium_octeon_sync.h"
+      "wolfssl/wolfcrypt/port/cavium/cavium_octeon_50xx.h"
       )
   endif()
 endif()

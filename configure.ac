@@ -33,7 +33,7 @@ AC_ARG_PROGRAM
 AC_CONFIG_HEADERS([config.h:config.in])
 
 LT_PREREQ([2.4.2])
-LT_INIT([disable-static win32-dll])
+LT_INIT([win32-dll])
 
 AC_ARG_VAR(EXTRA_CPPFLAGS, [Extra CPPFLAGS to add to end of autoconf-computed arg list.  Can also supply directly to make.])
 AC_ARG_VAR(EXTRA_CFLAGS, [Extra CFLAGS to add to end of autoconf-computed arg list.  Can also supply directly to make.])
@@ -7213,8 +7213,8 @@ AC_ARG_WITH([cavium-v],
 
 # Cavium Octeon
 OCTEON_ROOT=""
-: ${OCTEON_OBJ="obj-octeon2"}
-: ${OCTEON_HOST="standalone"}
+: ${OCTEON_OBJ="obj-linux_64-octeon"}
+: ${OCTEON_HOST="linux_64"}
 
 AC_ARG_WITH([octeon-sync],
     [AS_HELP_STRING([--with-octeon-sync=PATH],[PATH to Cavium Octeon SDK dir (sync)])],
@@ -7228,14 +7228,18 @@ AC_ARG_WITH([octeon-sync],
             OCTEON_ROOT=$withval
         fi
 
-        AM_CFLAGS="$AM_CFLAGS -DHAVE_CAVIUM_OCTEON_SYNC"
+        AM_CFLAGS="$AM_CFLAGS -w -DHAVE_OCTEON_50XX"
         AM_CFLAGS="$AM_CFLAGS -DOCTEON_MODEL=$OCTEON_MODEL"
         AM_CFLAGS="$AM_CFLAGS -I$OCTEON_ROOT/executive"
-        AS_CASE([$OCTEON_HOST],['linux'],[AM_CFLAGS="$AM_CFLAGS -DCVMX_BUILD_FOR_LINUX_HOST"])
+        AM_CFLAGS="$AM_CFLAGS -DCVMX_BUILD_FOR_LINUX_HOST -DWOLFSSL_GETRANDOM"
+        AM_CFLAGS="$AM_CFLAGS -DUSE_RUNTIME_MODEL_CHECKS=0 -DCVMX_ENABLE_PARAMETER_CHECKING=0 -DCVMX_ENABLE_CSR_ADDRESS_CHECKING=0 -DCVMX_ENABLE_POW_CHECKS=0 -DCVMX_USE_1_TO_1_TLB_MAPPINGS=0 -DOCTEON_TARGET=linux_64 -mabi=64 -march=octeon"
+
 
         #-I$OCTEON_ROOT/target/include
-        AM_LDFLAGS="$AM_LDFLAGS -lrt -Xlinker -T -Xlinker $OCTEON_ROOT/executive/cvmx-shared-linux.ld"
-        AM_LDFLAGS="$AM_LDFLAGS -L$OCTEON_ROOT/executive/$OCTEON_OBJ -lcvmx -lfdt"
+        #AM_LDFLAGS="$AM_LDFLAGS -lrt -Xlinker -T -Xlinker $OCTEON_ROOT/executive/cvmx-shared-linux.ld"
+        #AM_LDFLAGS="$AM_LDFLAGS -L$OCTEON_ROOT/executive/$OCTEON_OBJ -lcvmx -lfdt"
+        AM_LDFLAGS="$AM_LDFLAGS -L$OCTEON_ROOT/executive/$OCTEON_OBJ -L$OCTEON_ROOT/target/lib -DUSE_RUNTIME_MODEL_CHECKS=0 -DCVMX_ENABLE_PARAMETER_CHECKING=0 -DCVMX_ENABLE_CSR_ADDRESS_CHECKING=0 -DCVMX_ENABLE_POW_CHECKS=0 -DOCTEON_MODEL=$OCTEON_MODEL -DCVMX_USE_1_TO_1_TLB_MAPPINGS=0 -DOCTEON_TARGET=linux_64 -mabi=64 -march=octeon -static -lrt -lcvmx -lfdt -Xlinker -T -Xlinker $OCTEON_ROOT/target/lib/cvmx-shared-linux.ld"
+
 
         enable_shared=no
         enable_static=yes
@@ -8593,9 +8597,9 @@ AS_IF([test "x$ENABLED_OCSP" = "xyes" && \
       [AC_MSG_ERROR([please enable rsa or ecc if enabling ocsp.])])
 
 # Sync Intel QA and Sync Cavium Octeon require the crypto callback
-AS_IF([test "x$ENABLED_INTEL_QA_SYNC" = "xyes" || test "x$ENABLED_OCTEON_SYNC" = "xyes"],
-        [AS_IF([test "x$ENABLED_CRYPTOCB" = "xno"],
-         [AC_MSG_ERROR([please enable the crypto callback support using --enable-cryptocb])])])
+#AS_IF([test "x$ENABLED_INTEL_QA_SYNC" = "xyes" || test "x$ENABLED_OCTEON_SYNC" = "xyes"],
+#        [AS_IF([test "x$ENABLED_CRYPTOCB" = "xno"],
+#         [AC_MSG_ERROR([please enable the crypto callback support using --enable-cryptocb])])])
 
 # checks for pkcs7 needed enables
 AS_IF([test "x$ENABLED_PKCS7" = "xyes" && \

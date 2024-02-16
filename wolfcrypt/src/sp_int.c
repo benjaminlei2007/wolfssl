@@ -3782,7 +3782,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "mfhi	%[h]			\n\t"            \
         : [h] "+r" (vh), [l] "+r" (vl)                   \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "memory", "$lo", "$hi"                         \
+        : "memory", "%lo", "%hi"                         \
     )
 /* Multiply va by vb and store double size result in: vo | vh | vl */
 #define SP_ASM_MUL_SET(vl, vh, vo, va, vb)               \
@@ -3793,7 +3793,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "move	%[o], $0		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh), [o] "=r" (vo)    \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "$lo", "$hi"                                   \
+        : "%lo", "%hi"                                   \
     )
 /* Multiply va by vb and add double size result into: vo | vh | vl */
 #define SP_ASM_MUL_ADD(vl, vh, vo, va, vb)               \
@@ -3811,7 +3811,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[o], %[o], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh), [o] "+r" (vo)    \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Multiply va by vb and add double size result into: vh | vl */
 #define SP_ASM_MUL_ADD_NO(vl, vh, va, vb)                \
@@ -3825,7 +3825,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[h], %[h], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh)                   \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Multiply va by vb and add double size result twice into: vo | vh | vl */
 #define SP_ASM_MUL_ADD2(vl, vh, vo, va, vb)              \
@@ -3851,7 +3851,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[o], %[o], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh), [o] "+r" (vo)    \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Multiply va by vb and add double size result twice into: vo | vh | vl
  * Assumes first add will not overflow vh | vl
@@ -3875,7 +3875,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[o], %[o], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh), [o] "+r" (vo)    \
         : [a] "r" (va), [b] "r" (vb)                     \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Square va and store double size result in: vh | vl */
 #define SP_ASM_SQR(vl, vh, va)                           \
@@ -3885,7 +3885,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "mfhi	%[h]			\n\t"            \
         : [h] "+r" (vh), [l] "+r" (vl)                   \
         : [a] "r" (va)                                   \
-        : "memory", "$lo", "$hi"                         \
+        : "memory", "%lo", "%hi"                         \
     )
 /* Square va and add double size result into: vo | vh | vl */
 #define SP_ASM_SQR_ADD(vl, vh, vo, va)                   \
@@ -3903,7 +3903,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[o], %[o], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh), [o] "+r" (vo)    \
         : [a] "r" (va)                                   \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Square va and add double size result into: vh | vl */
 #define SP_ASM_SQR_ADD_NO(vl, vh, va)                    \
@@ -3917,7 +3917,7 @@ static WC_INLINE sp_int_digit sp_div_word(sp_int_digit hi, sp_int_digit lo,
         "daddu	%[h], %[h], $12		\n\t"            \
         : [l] "+r" (vl), [h] "+r" (vh)                   \
         : [a] "r" (va)                                   \
-        : "$10", "$11", "$12", "$lo", "$hi"              \
+        : "$10", "$11", "$12", "%lo", "%hi"              \
     )
 /* Add va into: vh | vl */
 #define SP_ASM_ADDC(vl, vh, va)                          \

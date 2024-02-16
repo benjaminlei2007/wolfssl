@@ -105,6 +105,12 @@ block cipher mechanism that uses n-bit binary string parameter key with 128-bits
     #include <wolfssl/wolfcrypt/port/caam/wolfcaam.h>
 #endif
 
+#ifdef HAVE_OCTEON_50XX
+    /* case of possibly not using hardware acceleration for AES but using key
+       blobs */
+    #include <wolfssl/wolfcrypt/port/cavium/cavium_octeon_50xx.h>
+#endif
+
 #ifdef DEBUG_AESNI
     #include <stdio.h>
 #endif
@@ -5066,6 +5072,39 @@ int wc_AesSetIV(Aes* aes, const byte* iv)
     #endif /* HAVE_AES_DECRYPT */
 #endif /* WOLFSSL_STM32_CUBEMX */
 
+#elif defined(HAVE_OCTEON_50XX)
+    int wc_AesCbcEncrypt(Aes* aes, byte* out, const byte* in, word32 sz)
+    {
+        int ret;
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0)
+        {
+            ret = Octeon_AesCbc_Encrypt(
+                    aes,
+                    (word64*)in,
+                    (word64*)out,
+                    sz);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+    #ifdef HAVE_AES_DECRYPT
+    int wc_AesCbcDecrypt(Aes* aes, byte* out, const byte* in, word32 sz)
+    {
+        int ret;
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0)
+        {
+            ret = Octeon_AesCbc_Decrypt(
+                        aes,
+                        (word64*)in,
+                        (word64*)out,
+                        sz);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+    #endif
 #elif defined(HAVE_COLDFIRE_SEC)
     static WARN_UNUSED_RESULT int wc_AesCbcCrypt(
         Aes* aes, byte* po, const byte* pi, word32 sz, word32 descHeader)
@@ -8348,6 +8387,28 @@ int wc_AesGcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
         authTag, authTagSz, authIn, authInSz);
 #endif /* STM32_CRYPTO_AES_GCM */
 
+#ifdef HAVE_OCTEON_50XX
+    if(in!=NULL)
+    {
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0)
+        {
+            ret = Octeon_AesGcm_Encrypt(
+                        aes,
+                        (byte*)in,
+                        (byte*)out,
+                        sz,
+                        (byte*)iv,
+                        ivSz,
+                        (byte*)authIn,
+                        authInSz,
+                        (byte*)authTag);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+#endif /* HAVE_OCTEON_50XX */
+
     VECTOR_REGISTERS_PUSH;
 
 #ifdef WOLFSSL_AESNI
@@ -8911,6 +8972,26 @@ int wc_AesGcmDecrypt(Aes* aes, byte* out, const byte* in, word32 sz,
         aes, out, in, sz, iv, ivSz,
         authTag, authTagSz, authIn, authInSz);
 #endif /* STM32_CRYPTO_AES_GCM */
+
+#ifdef HAVE_OCTEON_50XX
+    /* The STM standard peripheral library API's doesn't support partial blocks */
+    ret = wolfSSL_CryptHwMutexLock();
+    if (ret == 0)
+    {
+        ret = Octeon_AesGcm_Decrypt(
+                    aes,
+                    (byte*)in,
+                    (byte*)out,
+                    sz,
+                    (byte*)iv,
+                    ivSz,
+                    (byte*)authIn,
+                    authInSz,
+                    (byte*)authTag);
+        wolfSSL_CryptHwMutexUnLock();
+    }
+    return ret;
+#endif /* HAVE_OCTEON_50XX */
 
     VECTOR_REGISTERS_PUSH;
 

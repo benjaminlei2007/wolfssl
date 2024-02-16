@@ -123,6 +123,239 @@
 #if defined(WOLFSSL_PIC32MZ_HASH)
     #include <wolfssl/wolfcrypt/port/pic32/pic32mz-crypt.h>
 
+#elif defined(HAVE_OCTEON_50XX)
+#include <cvmx.h>
+#include <cvmx-asm.h>
+#include <cvmx-key.h>
+#include <cvmx-swap.h>
+#ifndef GET_UINT32_BE
+#define GET_UINT32_BE(n,b,i) {				\
+	(n) = ( (unsigned long) (b)[(i)    ] << 24 )	\
+	    | ( (unsigned long) (b)[(i) + 1] << 16 )	\
+	    | ( (unsigned long) (b)[(i) + 2] <<  8 )	\
+	    | ( (unsigned long) (b)[(i) + 3]       );	\
+}
+#endif
+#ifndef PUT_UINT32_BE
+#define PUT_UINT32_BE(n,b,i) {				\
+	(b)[(i)    ] = (unsigned char) ( (n) >> 24 );	\
+	(b)[(i) + 1] = (unsigned char) ( (n) >> 16 );	\
+	(b)[(i) + 2] = (unsigned char) ( (n) >>  8 );	\
+	(b)[(i) + 3] = (unsigned char) ( (n)       );	\
+}
+#endif
+/*
+ * 32-bit integer manipulation macros (big endian)
+ */
+#ifndef GET_UINT32_BE
+#define GET_UINT32_BE(n,b,i) {				\
+	(n) = ( (unsigned long) (b)[(i)    ] << 24 )	\
+	    | ( (unsigned long) (b)[(i) + 1] << 16 )	\
+	    | ( (unsigned long) (b)[(i) + 2] <<  8 )	\
+	    | ( (unsigned long) (b)[(i) + 3]       );	\
+}
+#endif
+#ifndef PUT_UINT32_BE
+#define PUT_UINT32_BE(n,b,i) {				\
+	(b)[(i)    ] = (unsigned char) ( (n) >> 24 );	\
+	(b)[(i) + 1] = (unsigned char) ( (n) >> 16 );	\
+	(b)[(i) + 2] = (unsigned char) ( (n) >>  8 );	\
+	(b)[(i) + 3] = (unsigned char) ( (n)       );	\
+}
+#endif
+
+void sha1_starts(sha1_context *ctx)
+{
+	ctx->total[0] = 0;
+	ctx->total[1] = 0;
+
+	ctx->state[0] = 0x67452301;
+	ctx->state[1] = 0xEFCDAB89;
+	ctx->state[2] = 0x98BADCFE;
+	ctx->state[3] = 0x10325476;
+	ctx->state[4] = 0xC3D2E1F0;
+
+}
+
+void sha1_update(sha1_context *ctx, const unsigned char *input,
+		 unsigned int ilen)
+{
+	int fill;
+	unsigned long left;
+	uint64_t *ptr;
+	uint64_t tmp;
+
+	if (ilen <= 0)
+		return;
+
+	left = ctx->total[0] & 0x3f;
+	fill = 64 - left;
+
+	ctx->total[0] += ilen;
+	ctx->total[0] &= 0xFFFFFFFF;
+
+	if (ctx->total[0] < (unsigned long)ilen)
+		ctx->total[1]++;
+
+	/* Set the IV to the MD5 magic start value */
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[0]) << 32 | ctx->state[1], 0);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[2]) << 32 | ctx->state[3], 1);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[4]) << 32, 2);
+
+	if (left && ilen >= fill) {
+		memcpy((void *)(ctx->buffer + left), (void *)input, fill);
+		ptr = (uint64_t *)ctx->buffer;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA(*ptr++);
+		input += fill;
+		ilen -= fill;
+		left = 0;
+	}
+
+	while (ilen >= 64) {
+		ptr = (uint64_t *)input;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA(*ptr++);
+		input += 64;
+		ilen -= 64;
+	}
+
+	CVMX_MF_HSH_IV(tmp, 0);
+	ctx->state[0] = tmp >> 32;
+	ctx->state[1] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 1);
+	ctx->state[2] = tmp >> 32;
+	ctx->state[3] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 2);
+	ctx->state[4] = tmp >> 32;
+
+	if (ilen > 0) {
+		memcpy((void *)(ctx->buffer + left), (void *)input, ilen);
+	}
+}
+
+static const unsigned char sha1_padding[64] = {
+	0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+void sha1_finish(sha1_context * ctx, unsigned char output[20])
+{
+	unsigned long last, padn;
+	unsigned long high, low;
+	unsigned char msglen[8];
+
+	high = (ctx->total[0] >> 29)
+		| (ctx->total[1] << 3);
+	low = (ctx->total[0] << 3);
+
+	PUT_UINT32_BE(high, msglen, 0);
+	PUT_UINT32_BE(low, msglen, 4);
+
+	last = ctx->total[0] & 0x3F;
+	padn = (last < 56) ? (56 - last) : (120 - last);
+
+	sha1_update(ctx, (unsigned char *) sha1_padding, padn);
+	sha1_update(ctx, msglen, 8);
+
+	PUT_UINT32_BE(ctx->state[0], output, 0);
+	PUT_UINT32_BE(ctx->state[1], output, 4);
+	PUT_UINT32_BE(ctx->state[2], output, 8);
+	PUT_UINT32_BE(ctx->state[3], output, 12);
+	PUT_UINT32_BE(ctx->state[4], output, 16);
+}
+
+   int wc_InitSha_ex(wc_Sha* sha, void* heap, int devId)
+    {
+        if (sha == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        (void)devId;
+        (void)heap;
+
+        sha1_starts(&sha->octCtx);
+
+        return 0;
+    }
+
+    int wc_ShaUpdate(wc_Sha* sha, const byte* data, word32 len)
+    {
+        int ret;
+
+        if (sha == NULL || (data == NULL && len > 0)) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha1_update(&sha->octCtx,data, len);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+
+    int wc_ShaFinal(wc_Sha* sha, byte* hash)
+    {
+        int ret;
+
+        if (sha == NULL || hash == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha1_finish(&sha->octCtx,hash);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+
+        (void)wc_InitSha(sha);  /* reset state */
+
+        return ret;
+    }
+    int wc_ShaFinalRaw(wc_Sha* sha, byte* hash)
+    {
+        int ret;
+
+        if (sha == NULL || hash == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha1_finish(&sha->octCtx,hash);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+
+        (void)wc_InitSha(sha);  /* reset state */
+
+        return ret;
+    }
+
+    int wc_ShaTransform(wc_Sha* sha, const unsigned char* data)
+{
+    /* sanity check */
+    if (sha == NULL || data == NULL) {
+        return BAD_FUNC_ARG;
+    }
+    return 0;
+}
 #elif defined(STM32_HASH)
 
     /* Supports CubeMX HAL or Standard Peripheral Library */

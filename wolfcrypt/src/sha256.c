@@ -182,7 +182,8 @@ on the specific device platform.
       !defined(WOLFSSL_RENESAS_RSIP)) \
       || defined(NO_WOLFSSL_RENESAS_FSPSM_HASH)) && \
     (!defined(WOLFSSL_HAVE_PSA) || defined(WOLFSSL_PSA_NO_HASH)) && \
-    !defined(WOLFSSL_RENESAS_RX64_HASH)
+    !defined(WOLFSSL_RENESAS_RX64_HASH) && \
+    !defined(HAVE_OCTEON_50XX) 
 
 
 static int InitSha256(wc_Sha256* sha256)
@@ -541,6 +542,228 @@ static int InitSha256(wc_Sha256* sha256)
 
 #elif defined(WOLFSSL_PIC32MZ_HASH)
     #include <wolfssl/wolfcrypt/port/pic32/pic32mz-crypt.h>
+
+#elif defined(HAVE_OCTEON_50XX)
+#include <cvmx.h>
+#include <cvmx-asm.h>
+#include <cvmx-key.h>
+#include <cvmx-swap.h>
+
+#ifndef GET_UINT32_BE
+#define GET_UINT32_BE(n,b,i) {				\
+	(n) = ( (unsigned long) (b)[(i)    ] << 24 )	\
+	    | ( (unsigned long) (b)[(i) + 1] << 16 )	\
+	    | ( (unsigned long) (b)[(i) + 2] <<  8 )	\
+	    | ( (unsigned long) (b)[(i) + 3]       );	\
+}
+#endif
+#ifndef PUT_UINT32_BE
+#define PUT_UINT32_BE(n,b,i) {				\
+	(b)[(i)    ] = (unsigned char) ( (n) >> 24 );	\
+	(b)[(i) + 1] = (unsigned char) ( (n) >> 16 );	\
+	(b)[(i) + 2] = (unsigned char) ( (n) >>  8 );	\
+	(b)[(i) + 3] = (unsigned char) ( (n)       );	\
+}
+#endif
+
+void sha256_starts(sha256_context * ctx)
+{
+	ctx->total[0] = 0;
+	ctx->total[1] = 0;
+
+	ctx->state[0] = 0x6A09E667;
+	ctx->state[1] = 0xBB67AE85;
+	ctx->state[2] = 0x3C6EF372;
+	ctx->state[3] = 0xA54FF53A;
+	ctx->state[4] = 0x510E527F;
+	ctx->state[5] = 0x9B05688C;
+	ctx->state[6] = 0x1F83D9AB;
+	ctx->state[7] = 0x5BE0CD19;
+}
+
+void sha256_update(sha256_context *ctx, const uint8_t *input, uint32_t length)
+{
+	uint32_t left, fill;
+	uint64_t *ptr;
+	uint64_t tmp;
+
+	if (!length)
+		return;
+
+	left = ctx->total[0] & 0x3F;
+	fill = 64 - left;
+
+	ctx->total[0] += length;
+	ctx->total[0] &= 0xFFFFFFFF;
+
+	if (ctx->total[0] < length)
+		ctx->total[1]++;
+
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[0]) << 32 | ctx->state[1], 0);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[2]) << 32 | ctx->state[3], 1);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[4]) << 32 | ctx->state[5], 2);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[6]) << 32 | ctx->state[7], 3);
+
+	if (left && length >= fill) {
+		memcpy((void *) (ctx->buffer + left), (void *) input, fill);
+		ptr = (uint64_t *)ctx->buffer;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA256(*ptr++);
+
+		length -= fill;
+		input += fill;
+		left = 0;
+	}
+
+	while (length >= 64) {
+		ptr = (uint64_t *)input;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA256(*ptr++);
+		length -= 64;
+		input += 64;
+	}
+
+	CVMX_MF_HSH_IV(tmp, 0);
+	ctx->state[0] = tmp >> 32;
+	ctx->state[1] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 1);
+	ctx->state[2] = tmp >> 32;
+	ctx->state[3] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 2);
+	ctx->state[4] = tmp >> 32;
+	ctx->state[5] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 3);
+	ctx->state[6] = tmp >> 32;
+	ctx->state[7] = tmp & 0xffffffff;
+
+	if (length)
+		memcpy((void *) (ctx->buffer + left), (void *) input, length);
+}
+
+static const uint8_t sha256_padding[64] = {
+	0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+void sha256_finish(sha256_context *ctx, uint8_t digest[32])
+{
+	uint32_t last, padn;
+	uint32_t high, low;
+	uint8_t msglen[8];
+
+	high = ((ctx->total[0] >> 29)
+		| (ctx->total[1] << 3));
+	low = (ctx->total[0] << 3);
+
+	PUT_UINT32_BE(high, msglen, 0);
+	PUT_UINT32_BE(low, msglen, 4);
+
+	last = ctx->total[0] & 0x3F;
+	padn = (last < 56) ? (56 - last) : (120 - last);
+
+	sha256_update(ctx, sha256_padding, padn);
+	sha256_update(ctx, msglen, 8);
+
+	PUT_UINT32_BE(ctx->state[0], digest, 0);
+	PUT_UINT32_BE(ctx->state[1], digest, 4);
+	PUT_UINT32_BE(ctx->state[2], digest, 8);
+	PUT_UINT32_BE(ctx->state[3], digest, 12);
+	PUT_UINT32_BE(ctx->state[4], digest, 16);
+	PUT_UINT32_BE(ctx->state[5], digest, 20);
+	PUT_UINT32_BE(ctx->state[6], digest, 24);
+	PUT_UINT32_BE(ctx->state[7], digest, 28);
+}
+
+int wc_InitSha256_ex(wc_Sha256* sha256, void* heap, int devId)
+    {
+        if (sha256 == NULL)
+            return BAD_FUNC_ARG;
+
+        (void)devId;
+        (void)heap;
+
+        XMEMSET(sha256, 0, sizeof(wc_Sha256));
+        sha256_starts(&sha256->octCtx);
+        return 0;
+    }
+
+    int wc_Sha256Update(wc_Sha256* sha256, const byte* data, word32 len)
+    {
+        int ret = 0;
+
+        if (sha256 == NULL || (data == NULL && len > 0)) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha256_update(&sha256->octCtx,data, len);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+
+    int wc_Sha256Final(wc_Sha256* sha256, byte* hash)
+    {
+        int ret = 0;
+
+        if (sha256 == NULL || hash == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha256_finish(&sha256->octCtx,hash);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+
+        (void)wc_InitSha256(sha256); /* reset state */
+
+        return ret;
+    }
+
+    int wc_Sha256FinalRaw(wc_Sha256* sha256, byte* hash)
+    {
+        int ret = 0;
+
+        if (sha256 == NULL || hash == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha256_finish(&sha256->octCtx,hash);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+
+        (void)wc_InitSha256(sha256); /* reset state */
+
+        return ret;
+    }
+    int wc_Sha256Transform(wc_Sha256* sha, const unsigned char* data)
+    {
+        if (sha == NULL || data == NULL) {
+            return BAD_FUNC_ARG;
+        }
+        return 0;
+    }
 
 #elif defined(STM32_HASH_SHA2)
 
@@ -1585,6 +1808,174 @@ static int InitSha256(wc_Sha256* sha256)
 
         return ret;
     }
+#elif defined(HAVE_OCTEON_50XX)
+
+void sha224_starts(sha256_context * ctx)
+{
+	ctx->total[0] = 0;
+	ctx->total[1] = 0;
+
+	ctx->state[0] = 0xc1059ed8UL;
+	ctx->state[1] = 0x367cd507UL;
+	ctx->state[2] = 0x3070dd17UL;
+	ctx->state[3] = 0xf70e5939UL;
+	ctx->state[4] = 0xffc00b31UL;
+	ctx->state[5] = 0x68581511UL;
+	ctx->state[6] = 0x64f98fa7UL;
+	ctx->state[7] = 0xbefa4fa4UL;
+
+}
+
+void sha224_update(sha256_context *ctx, const uint8_t *input, uint32_t length)
+{
+	uint32_t left, fill;
+	uint64_t *ptr;
+	uint64_t tmp;
+
+	if (!length)
+		return;
+
+	left = ctx->total[0] & 0x3F;
+	fill = 64 - left;
+
+	ctx->total[0] += length;
+	ctx->total[0] &= 0xFFFFFFFF;
+
+	if (ctx->total[0] < length)
+		ctx->total[1]++;
+
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[0]) << 32 | ctx->state[1], 0);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[2]) << 32 | ctx->state[3], 1);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[4]) << 32 | ctx->state[5], 2);
+	CVMX_MT_HSH_IV(((uint64_t)ctx->state[6]) << 32 | ctx->state[7], 3);
+
+	if (left && length >= fill) {
+		memcpy((void *) (ctx->buffer + left), (void *) input, fill);
+		ptr = (uint64_t *)ctx->buffer;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA256(*ptr++);
+
+		length -= fill;
+		input += fill;
+		left = 0;
+	}
+
+	while (length >= 64) {
+		ptr = (uint64_t *)input;
+		CVMX_MT_HSH_DAT(*ptr++, 0);
+		CVMX_MT_HSH_DAT(*ptr++, 1);
+		CVMX_MT_HSH_DAT(*ptr++, 2);
+		CVMX_MT_HSH_DAT(*ptr++, 3);
+		CVMX_MT_HSH_DAT(*ptr++, 4);
+		CVMX_MT_HSH_DAT(*ptr++, 5);
+		CVMX_MT_HSH_DAT(*ptr++, 6);
+		CVMX_MT_HSH_STARTSHA256(*ptr++);
+		length -= 64;
+		input += 64;
+	}
+
+	CVMX_MF_HSH_IV(tmp, 0);
+	ctx->state[0] = tmp >> 32;
+	ctx->state[1] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 1);
+	ctx->state[2] = tmp >> 32;
+	ctx->state[3] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 2);
+	ctx->state[4] = tmp >> 32;
+	ctx->state[5] = tmp & 0xffffffff;
+
+	CVMX_MF_HSH_IV(tmp, 3);
+	ctx->state[6] = tmp >> 32;
+	ctx->state[7] = tmp & 0xffffffff;
+
+	if (length)
+		memcpy((void *) (ctx->buffer + left), (void *) input, length);
+}
+
+void sha224_finish(sha256_context *ctx, uint8_t digest[28])
+{
+	uint32_t last, padn;
+	uint32_t high, low;
+	uint8_t msglen[8];
+
+	high = ((ctx->total[0] >> 29)
+		| (ctx->total[1] << 3));
+	low = (ctx->total[0] << 3);
+
+	PUT_UINT32_BE(high, msglen, 0);
+	PUT_UINT32_BE(low, msglen, 4);
+
+	last = ctx->total[0] & 0x3F;
+	padn = (last < 56) ? (56 - last) : (120 - last);
+
+	sha256_update(ctx, sha256_padding, padn);
+	sha256_update(ctx, msglen, 8);
+
+	PUT_UINT32_BE(ctx->state[0], digest, 0);
+	PUT_UINT32_BE(ctx->state[1], digest, 4);
+	PUT_UINT32_BE(ctx->state[2], digest, 8);
+	PUT_UINT32_BE(ctx->state[3], digest, 12);
+	PUT_UINT32_BE(ctx->state[4], digest, 16);
+	PUT_UINT32_BE(ctx->state[5], digest, 20);
+	PUT_UINT32_BE(ctx->state[6], digest, 24);
+}
+
+    int wc_InitSha224_ex(wc_Sha224* sha224, void* heap, int devId)
+    {
+        if (sha224 == NULL)
+            return BAD_FUNC_ARG;
+        (void)devId;
+        (void)heap;
+
+        XMEMSET(sha224, 0, sizeof(wc_Sha224));
+        sha224_starts(&sha224->octCtx);
+        return 0;
+    }
+
+    int wc_Sha224Update(wc_Sha224* sha224, const byte* data, word32 len)
+    {
+        int ret = 0;
+
+        if (sha224 == NULL || (data == NULL && len > 0)) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha224_update(&sha224->octCtx,data, len);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
+
+    int wc_Sha224Final(wc_Sha224* sha224, byte* hash)
+    {
+        int ret = 0;
+
+        if (sha224 == NULL || hash == NULL) {
+            return BAD_FUNC_ARG;
+        }
+
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            sha224_finish(&sha224->octCtx,hash);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+
+        (void)wc_InitSha224(sha224); /* reset state */
+
+        return ret;
+    }
+
+
 #elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
     int wc_InitSha224_ex(wc_Sha224* sha224, void* heap, int devId)

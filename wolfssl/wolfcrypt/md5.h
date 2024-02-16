@@ -97,6 +97,10 @@ typedef struct wc_Md5 {
     hashUpdCache cache; /* cache for updates */
 #endif
 #endif /* STM32_HASH */
+#ifdef HAVE_OCTEON_50XX
+    word64 E;
+    word64 F;
+#endif
 #ifdef WOLFSSL_ASYNC_CRYPT
     WC_ASYNC_DEV asyncDev;
 #endif /* WOLFSSL_ASYNC_CRYPT */

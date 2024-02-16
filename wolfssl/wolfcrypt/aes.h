@@ -271,7 +271,7 @@ struct Aes {
     byte   keyIdSet;
     byte   useSWCrypt; /* Use SW crypt instead of SE050, before SCP03 auth */
 #endif
-#ifdef HAVE_CAVIUM_OCTEON_SYNC
+#if defined(HAVE_CAVIUM_OCTEON_SYNC) || defined(HAVE_OCTEON_50XX)
     word32 y0;
 #endif
 #endif /* HAVE_AESGCM */
@@ -325,12 +325,12 @@ struct Aes {
     struct kcapi_handle* handle;
     int                  init;
 #endif
-#if defined(WOLF_CRYPTO_CB) || (defined(WOLFSSL_DEVCRYPTO) && \
+#if defined(WOLF_CRYPTO_CB) ||defined(HAVE_OCTEON_50XX)|| (defined(WOLFSSL_DEVCRYPTO) && \
     (defined(WOLFSSL_DEVCRYPTO_AES) || defined(WOLFSSL_DEVCRYPTO_CBC))) || \
     (defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_AES)) || \
     defined(WOLFSSL_KCAPI_AES)
     word32 devKey[AES_MAX_KEY_SIZE/WOLFSSL_BIT_SIZE/sizeof(word32)]; /* raw key */
-#ifdef HAVE_CAVIUM_OCTEON_SYNC
+#if defined(HAVE_CAVIUM_OCTEON_SYNC) || defined(HAVE_OCTEON_50XX)
     int    keySet;
 #endif
 #endif
